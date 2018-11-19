@@ -1,16 +1,113 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # Compute the tree which maximizes the likehood
-import gurobipy
-import sys
-import os
+from gurobipy import *
+import sys, os
 import math
 import errno
 from datetime import datetime
 import argparse
 import itertools
-
+from collections import namedtuple
+import numpy as np 
+#user-created libraries
+sys.path.append(os.path.abspath(os.getcwd() + '/utils'))
 from matrix_utils import *
 from outputs import *
+
+#for every pair rows returns likelihood probability
+def prob_mergin(row1, row2):
+	prob = 1
+	lenght = len(row1)
+	for i in range(lenght):
+		if row1[i] == row2[i]:
+			if row1[i] == 1:
+				prob = prob * ((1-beta)**2+beta**2)
+			elif row1[i] == 0:
+				prob = prob * ((1-alpha)**2+alpha**2)
+		elif (row1[i] != 2) and (row2[0] != 2):
+			prob = prob * ((1-beta)*alpha + (1-alpha)*beta)
+	return prob
+
+#delete rows with higher likelihood value 
+def merge_rows(matrix, d):
+	indexes=[]
+	indexes = [k[1] for k,p in d.items() if p >= percent]#consider only second index in the pair 
+	indexes = sorted(list(set(indexes)))[::-1]#sort the indexes in descending order
+	for i in range(len(indexes)):
+         matrix = np.delete(matrix, indexes[i], 0)
+	return matrix
+
+#for every pair cols(mutations) returns likelihood probability
+def prob_merging_mutations(col1,col2):
+	lenght = len(col1)
+	prob = 1
+	for i in range(1,lenght):
+		if col1[i] == col2[i]:
+			if col1[i] == 1:
+				prob = prob * ((1-alpha)**2+alpha**2)
+			elif col1[i] == 0:
+				prob = prob * ((1-beta)**2+beta**2)
+		elif (col1[i]!=2) and (col2[i]!=2):
+			prob = prob * ((1-alpha)*beta + (1-beta)*alpha)
+	return prob
+
+#delete cols with higher likelihood value
+def merge_cols(matrix, d):
+	indexes=[]
+	indexes = [k[1] for k,p in d.items() if p >= percent]#consider only second index in the pair   ##change probability
+	indexes = sorted(list(set(indexes)))[::-1]#sort the indexes in descending order
+	for i in range(len(indexes)):
+         matrix = np.delete(matrix, indexes[i], 1)
+	return matrix
+
+#delete clones/rows with many missing value
+def remove_clones(matrix):
+	lenght = len(matrix)
+	index = []
+	for i in range(lenght):
+		occurrences = list(matrix[i]).count(2)
+		if float(occurrences)/lenght>missing_value:
+			index.append(i)
+	for num in index:		
+		matrix = np.delete(matrix, num, 0)
+	return matrix
+
+#delete mutation/cols with many missing value or with few value 1
+def remove_mutations(matrix):
+	lenght = len(matrix[0])
+	index = []
+	for i in range(lenght):
+		occurrences_data_missing = list(matrix[:,i]).count(2)
+		occurrences_few_mutation = list(matrix[:,i]).count(1)
+		if (float(occurrences_data_missing)/len(matrix)>missing_value) or (float(occurrences_few_mutation)/len(matrix)<few_one):
+			index.append(i)
+	for num in index[::-1]:
+		matrix = np.delete(matrix, num, 1)
+	return matrix
+
+#return if the mutations are independent or dependent with probability
+def prob_independent_mutations(col1,col2):
+    lenght = len(col1)
+    prob_ind = 1
+    prob_not_independent = 1
+    for i in range(lenght):
+        if col1[i] == col2[i]:
+            if col1[i] == 1:
+                prob_ind = prob_ind * (1-((1-beta)**2))
+                prob_not_independent = prob_not_independent * (((1-beta)**2))
+            elif col1[i] == 0:
+                prob_ind = prob_ind * ((1-alpha)**2)
+                prob_not_independent = prob_not_independent * (1-((1-alpha)**2))
+        elif (col1[i] != 2) and (col2[i] != 2):
+            prob_ind = prob_ind * (1-((1-beta)*alpha))
+            prob_not_independent = prob_not_independent * (((1-beta)*alpha))
+    #print "prob_not_independent", prob_not_independent
+    #print "prob_ind", prob_ind
+    if prob_ind > prob_not_independent:
+		return prob_ind, True
+    else:
+		return prob_not_independent, False
+
 
 #==================================================================#
 #========================= PREREQUISITES ==========================#
@@ -34,6 +131,12 @@ parser.add_argument('-b', '--falsepositive', action='store', type=float, require
                     help='set -b False positive probability.')
 parser.add_argument('-a', '--falsenegative', action='store', type=float, required=True,
                     help='set -a False negative probability.')
+parser.add_argument('-p', '--percent', action='store', type=float, required=True,
+					help='set -p accuracy threshold probability for clones or mutations.')
+parser.add_argument('-mv', '--missingvalues', action='store', type=float, required=True,
+					help='set -mv max missing values for every row or col,in percent')
+parser.add_argument('-fo', '--fewone', action='store', type=float, required=True,
+					help='set -fp threshold for mutation with few one,in percent')
 parser.add_argument('--mps', action='store_true',
                     help='This will output the model in MPS format instead of running the solver')
 
@@ -44,10 +147,49 @@ max_gains = 1
 max_losses = int(args.k)
 alpha = float(args.falsenegative)
 beta = float(args.falsepositive)
+percent = float(args.percent)
+missing_value = float(args.missingvalues)
+few_one = float(args.fewone) 
 
 #----------------------Initialize program----------------------#
 input_matrix = read_matrix_tab(args.file)
 matrix_name = os.path.basename(args.file).split('.')[0]
+input_matrix = np.array(input_matrix) #I exploit library NumPy
+
+num_clones = len(input_matrix)
+num_mutations = len(input_matrix[0])
+print('parameters before the selection criteria')
+print('Num mutations: %d' % num_mutations)
+print('Num clones: %d' % num_clones)
+
+
+input_matrix = remove_clones(input_matrix)
+input_matrix = remove_mutations(input_matrix)
+
+#I use the dict, pair clones(them index)and similar probability.
+#make tuple 
+tup_row = namedtuple('Tup',['index','percent'])
+pair_percent =[]
+for index1 in range(len(input_matrix)-1):
+	for index2 in range(index1+1,len(input_matrix)):
+		prob = prob_mergin(input_matrix[index1],input_matrix[index2])
+		pair_percent.append(tup_row((index1,index2),prob))
+
+d_row = dict(pair_percent)
+input_matrix = merge_rows(input_matrix, d_row)
+
+#I use the dict, pair mutations(them index)and similar probability.
+#make tuple
+tup_col = namedtuple('Tup',['index','percent'])
+pair_probability = []
+for index1 in range(len(input_matrix[0])-1):
+	for index2 in range(index1,len(input_matrix[0])):
+		prob = prob_merging_mutations(input_matrix[:,index1],input_matrix[:,index2])
+		pair_probability.append(tup_col((index1,index2),prob))
+d_col = dict(pair_probability)
+
+input_matrix = merge_cols(input_matrix, d_col)
+
 
 # Fixed parameters
 #num_samples = len(input_matrix)
@@ -57,9 +199,18 @@ num_mutations = len(input_matrix[0])
 num_columns = num_mutations * (1 + max_losses)
 max_error = 1
 
+print("parameters after the selection criteria")
 #print('Num samples: %d' % num_samples)
 print('Num mutations: %d' % num_mutations)
 print('Num clones: %d' % num_clones)
+
+pair_mutations_dependent = []
+for index1 in range(num_mutations-1):
+	for index2 in range(index1+1,num_mutations):
+		prob ,check = prob_independent_mutations(input_matrix[:,index1],input_matrix[:,index2])
+		if check == False:
+			pair_mutations_dependent.append([(index1,index2),prob])
+print "pair_mutations_dependent", pair_mutations_dependent
 
 import os
 try:
