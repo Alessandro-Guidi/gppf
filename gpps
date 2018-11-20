@@ -15,7 +15,7 @@ from matrix_utils import *
 from outputs import *
 
 #for every pair rows returns likelihood probability
-def prob_mergin(row1, row2):
+def prob_mergin(row1, row2, alpha, beta):
 	prob = 1
 	lenght = len(row1)
 	for i in range(lenght):
@@ -29,7 +29,7 @@ def prob_mergin(row1, row2):
 	return prob
 
 #delete rows with higher likelihood value 
-def merge_rows(matrix, d):
+def merge_rows(matrix, d, percent):
 	indexes=[]
 	indexes = [k[1] for k,p in d.items() if p >= percent]#consider only second index in the pair 
 	indexes = sorted(list(set(indexes)))[::-1]#sort the indexes in descending order
@@ -38,7 +38,7 @@ def merge_rows(matrix, d):
 	return matrix
 
 #for every pair cols(mutations) returns likelihood probability
-def prob_merging_mutations(col1,col2):
+def prob_merging_mutations(col1,col2,alpha,beta):
 	lenght = len(col1)
 	prob = 1
 	for i in range(1,lenght):
@@ -52,7 +52,7 @@ def prob_merging_mutations(col1,col2):
 	return prob
 
 #delete cols with higher likelihood value
-def merge_cols(matrix, d):
+def merge_cols(matrix, d, percent):
 	indexes=[]
 	indexes = [k[1] for k,p in d.items() if p >= percent]#consider only second index in the pair   ##change probability
 	indexes = sorted(list(set(indexes)))[::-1]#sort the indexes in descending order
@@ -61,7 +61,7 @@ def merge_cols(matrix, d):
 	return matrix
 
 #delete clones/rows with many missing value
-def remove_clones(matrix):
+def remove_clones(matrix,missing_value):
 	lenght = len(matrix)
 	index = []
 	for i in range(lenght):
@@ -73,7 +73,7 @@ def remove_clones(matrix):
 	return matrix
 
 #delete mutation/cols with many missing value or with few value 1
-def remove_mutations(matrix):
+def remove_mutations(matrix, missing_value, few_one):
 	lenght = len(matrix[0])
 	index = []
 	for i in range(lenght):
@@ -86,7 +86,7 @@ def remove_mutations(matrix):
 	return matrix
 
 #return if the mutations are independent or dependent with probability
-def prob_independent_mutations(col1,col2):
+def prob_independent_mutations(col1,col2,alpha,beta):
     lenght = len(col1)
     prob_ind = 1
     prob_not_independent = 1
@@ -103,10 +103,7 @@ def prob_independent_mutations(col1,col2):
             prob_not_independent = prob_not_independent * (((1-beta)*alpha))
     #print "prob_not_independent", prob_not_independent
     #print "prob_ind", prob_ind
-    if prob_ind > prob_not_independent:
-		return prob_ind, True
-    else:
-		return prob_not_independent, False
+    return prob_ind, prob_not_independent
 
 
 #==================================================================#
@@ -163,8 +160,8 @@ print('Num mutations: %d' % num_mutations)
 print('Num clones: %d' % num_clones)
 
 
-input_matrix = remove_clones(input_matrix)
-input_matrix = remove_mutations(input_matrix)
+input_matrix = remove_clones(input_matrix, missing_value)
+input_matrix = remove_mutations(input_matrix, missing_value, few_one)
 
 #I use the dict, pair clones(them index)and similar probability.
 #make tuple 
@@ -172,11 +169,11 @@ tup_row = namedtuple('Tup',['index','percent'])
 pair_percent =[]
 for index1 in range(len(input_matrix)-1):
 	for index2 in range(index1+1,len(input_matrix)):
-		prob = prob_mergin(input_matrix[index1],input_matrix[index2])
+		prob = prob_mergin(input_matrix[index1],input_matrix[index2],alpha,beta)
 		pair_percent.append(tup_row((index1,index2),prob))
 
 d_row = dict(pair_percent)
-input_matrix = merge_rows(input_matrix, d_row)
+input_matrix = merge_rows(input_matrix, d_row, percent)
 
 #I use the dict, pair mutations(them index)and similar probability.
 #make tuple
@@ -184,11 +181,11 @@ tup_col = namedtuple('Tup',['index','percent'])
 pair_probability = []
 for index1 in range(len(input_matrix[0])-1):
 	for index2 in range(index1,len(input_matrix[0])):
-		prob = prob_merging_mutations(input_matrix[:,index1],input_matrix[:,index2])
+		prob = prob_merging_mutations(input_matrix[:,index1],input_matrix[:,index2],alpha,beta)
 		pair_probability.append(tup_col((index1,index2),prob))
 d_col = dict(pair_probability)
 
-input_matrix = merge_cols(input_matrix, d_col)
+input_matrix = merge_cols(input_matrix, d_col, percent)
 
 
 # Fixed parameters
@@ -207,9 +204,8 @@ print('Num clones: %d' % num_clones)
 pair_mutations_dependent = []
 for index1 in range(num_mutations-1):
 	for index2 in range(index1+1,num_mutations):
-		prob ,check = prob_independent_mutations(input_matrix[:,index1],input_matrix[:,index2])
-		if check == False:
-			pair_mutations_dependent.append([(index1,index2),prob])
+		prob_indipendent ,prob_not_independent = prob_independent_mutations(input_matrix[:,index1],input_matrix[:,index2],alpha,beta)
+		pair_mutations_dependent.append([(index1,index2),prob])
 print "pair_mutations_dependent", pair_mutations_dependent
 
 import os
