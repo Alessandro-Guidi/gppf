@@ -8,11 +8,34 @@ from datetime import datetime
 import argparse
 import itertools
 from collections import namedtuple
-import numpy as np 
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt 
 #user-created libraries
 sys.path.append(os.path.abspath(os.getcwd() + '/utils'))
 from matrix_utils import *
 from outputs import *
+
+
+
+
+#create graph for rows and return it
+def create_graph(nrow,d,p):
+    G = nx.Graph()
+    G.add_nodes_from(range(nrow))
+    ''' 
+    'control view'
+    plt.subplot(221)
+    nx.draw(G, with_labels=True, font_weight='bold')
+    '''
+    [G.add_edge(key[0],key[1]) for key, value in d.iteritems() if value>p]
+    '''
+    plt.subplot(222)
+    nx.draw(G, with_labels=True, font_weight='bold')
+    plt.show()
+    '''
+    return G
+
 
 #for every pair rows returns likelihood probability
 def prob_mergin(row1, row2, alpha, beta):
@@ -173,6 +196,9 @@ for index1 in range(len(input_matrix)-1):
 		pair_percent.append(tup_row((index1,index2),prob))
 
 d_row = dict(pair_percent)
+
+G = create_graph(len(input_matrix),d_row,percent)
+
 input_matrix = merge_rows(input_matrix, d_row, percent)
 
 #I use the dict, pair mutations(them index)and similar probability.
@@ -206,7 +232,7 @@ for index1 in range(num_mutations-1):
 	for index2 in range(index1+1,num_mutations):
 		prob_indipendent ,prob_not_independent = prob_independent_mutations(input_matrix[:,index1],input_matrix[:,index2],alpha,beta)
 		pair_mutations_dependent.append([(index1,index2),prob])
-print "pair_mutations_dependent", pair_mutations_dependent
+#print "pair_mutations_dependent", pair_mutations_dependent
 
 import os
 try:
