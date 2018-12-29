@@ -18,15 +18,6 @@ from matrix_utils import *
 from outputs import *
 
 
-#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!COSE DA FARE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#TROVARE/PROVARE AD UTILIZZARE LE PERCENTUALI LOGARITMICHE
-#PROBLEMA QUANDO CANCELLO TROPPE ROW/COL E MI RITROVO DELLE NUOVE ROW/COL CHE SODDISFANO NUOVAMENTE I CRITERI
-#UTILIZZARE STESSO APPROCCIO CON LE MUTAZIONI
-#TROVARE UNA LIBRERIA SU NETWORKX PER IL MERGE DEI NODI
-
-#devo risolvere il problema che mi da' quando lancio il file 2.txt
-
-
 #create graph for rows and return it
 def create_graph(nrow,d,p):
     G = nx.Graph()
